@@ -92,7 +92,7 @@
   .btn.ghost{background:#eef4f5; color:var(--ink); box-shadow:none;}
   .hidden{display:none !important;}
 
-  /* Date chips (Today / Tomorrow) */
+  /* Date chips (7-day selection) */
   .date-chips{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
   .dchip{
     border:1.5px solid var(--line); border-radius:16px; padding:14px 10px; text-align:center;
@@ -231,7 +231,7 @@
 
       <label>Preferred Date</label>
       <div class="date-chips" id="dateChips"></div>
-      <div class="err" id="e-date">Please choose Today or Tomorrow.</div>
+      <div class="err" id="e-date">Please choose a date within the next 7 days.</div>
 
       <button type="submit" class="btn">Continue →</button>
     </form>
@@ -353,7 +353,6 @@ const ZONES = {
   "Vancouver":"America/Vancouver"
 };
 const SLOT_TIMES_ET = ["14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00","19:30","20:00","20:30"];
-const TODAY_LOCK_ET = "20:15"; // after this Eastern time, "Today" locks and only "Tomorrow" can be picked
 
 const state = { firstName:"", lastName:"", email:"", phone:"", date:"", timezone:"", timeLabel:"", time24:"", device:"" };
 
@@ -389,14 +388,12 @@ function isoLocal(d){
 }
 const $ = id => document.getElementById(id);
 
-/* ---------- Today / Tomorrow chips ---------- */
+/* ---------- Date chips: today through the next 6 days ---------- */
 (function buildDateChips(){
   const fmt = new Intl.DateTimeFormat("en-US",{weekday:"short", month:"short", day:"numeric"});
-  const today = new Date();
-  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1);
   const et = nowInET();
-  const pastCutoff = et.mins >= toMins(TODAY_LOCK_ET); // 8:15 PM ET
   const box = $("dateChips");
+  let firstAvailable = null;
 
   function addChip(label, sub, value, locked){
     const el = document.createElement("div");
@@ -404,7 +401,10 @@ const $ = id => document.getElementById(id);
     el.innerHTML = `<div class="d1">${label}</div><div class="d2">${sub}</div>`;
     if(locked){
       el.classList.add("locked");
-      el.onclick = ()=>{ $("e-date").textContent = "Today's presentations have ended — please choose Tomorrow."; $("e-date").style.display = "block"; };
+      el.onclick = ()=>{
+        $("e-date").textContent = "Today's presentations have ended — please choose another date.";
+        $("e-date").style.display = "block";
+      };
     } else {
       el.onclick = ()=>{
         document.querySelectorAll(".dchip").forEach(x=>x.classList.remove("sel"));
@@ -414,22 +414,25 @@ const $ = id => document.getElementById(id);
         // refresh slots if a timezone is already chosen
         if(state.timezone) $("timezone").dispatchEvent(new Event("change"));
       };
+      if(!firstAvailable) firstAvailable = {el, value};
     }
     box.appendChild(el);
     return el;
   }
 
-  if(!pastCutoff){
-    // Before 8:15 PM ET — only Today can be scheduled (past times still gray out)
-    const t = addChip("Today", fmt.format(today), isoLocal(today), false);
-    t.classList.add("sel");
-    state.date = isoLocal(today);
-  } else {
-    // Past 8:15 PM ET — Today is over, Tomorrow appears
-    addChip("Today", fmt.format(today), isoLocal(today), true);
-    const t = addChip("Tomorrow", fmt.format(tomorrow), isoLocal(tomorrow), false);
-    t.classList.add("sel");
-    state.date = isoLocal(tomorrow);
+  for(let i=0; i<7; i++){
+    const day = new Date();
+    day.setDate(day.getDate()+i);
+    const value = isoLocal(day);
+    const isToday = i===0;
+    const locked = false; // Keep date selection available at all times; past time slots remain unavailable.
+    const label = isToday ? "Today" : (i===1 ? "Tomorrow" : fmt.format(day).split(",")[0]);
+    addChip(label, fmt.format(day), value, locked);
+  }
+
+  if(firstAvailable){
+    firstAvailable.el.classList.add("sel");
+    state.date = firstAvailable.value;
   }
 })();
 
